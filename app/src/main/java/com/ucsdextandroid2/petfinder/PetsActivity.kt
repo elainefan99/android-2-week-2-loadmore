@@ -2,31 +2,37 @@ package com.ucsdextandroid2.petfinder
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Adapter
 import android.widget.ImageView
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import androidx.appcompat.app.AppCompatActivity
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import androidx.paging.*
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.*
 
 class PetsActivity : AppCompatActivity() {
 
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private val adapter = PetsAdapter()
+    private val LOCATION_REQUEST_CODE = 9
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,113 +40,161 @@ class PetsActivity : AppCompatActivity() {
         val navView: BottomNavigationView = findViewById(R.id.nav_view)
 
         val recyclerView: RecyclerView = findViewById(R.id.recyclerview)
-        val adapter = PetsAdapter()
+
         recyclerView.layoutManager = LinearLayoutManager(this, RecyclerView.VERTICAL, false)
-        recyclerView.adapter = adapter
+        recyclerView.adapter = adapter 
 
-        val petsLiveData = LivePagedListBuilder(PetsDataSourceFactory(null, null), PagedList.Config.Builder()
-            .setEnablePlaceholders(false)
-            .setPrefetchDistance(10)
-            .build()
-        ).build()
-
-        petsLiveData.observe(this, Observer<PagedList<PetModel>> { notes ->
-            adapter.submitList(notes)
-        })
-
-        checkLocationPermission()
-
+        checkForLocationPermission(true)
     }
-
-    private fun checkLocationPermission() {
-
-        // Here, thisActivity is the current activity
-        if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-
-            // Permission is not granted
-            // Should we show an explanation?
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-                    Manifest.permission.ACCESS_FINE_LOCATION)) {
-                // Show an explanation to the user *asynchronously* -- don't block
-                // this thread waiting for the user's response! After the user
-                // sees the explanation, try again to request the permission.
-            } else {
-                // No explanation needed, we can request the permission.
-                ActivityCompat.requestPermissions(this,
-                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 5)
-            }
-        } else {
-            // Permission has already been granted
-
+    private fun checkForLocationPermission(showRational: Boolean) {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             getLocation()
-        }
 
+        }
+        else {
+            if(showRational && showPermissionRationalIfAble()) {
+
+            }
+            else{
+                ActivityCompat
+                    .requestPermissions(
+                        this,
+                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                        LOCATION_REQUEST_CODE
+                    )
+
+            }
+        }
+    }
+    private fun showPermissionRationalIfAble(): Boolean {
+        val ableToShowRational = ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        if (ableToShowRational){
+            showPermissionRational()
+            return true
+        }
+        else
+            return false
+    }
+    private fun showPermissionRational(){
+        AlertDialog.Builder(this)
+            .setTitle("Location")
+            .setMessage("We need your Location to show you pets available in your area")
+            .setPositiveButton("Ok") {dialog, which ->
+            if(which == DialogInterface.BUTTON_POSITIVE)
+                checkForLocationPermission(false)
+            }
+                .setNegativeButton("No Thanks"){dialog, which  ->
+                if(which ==DialogInterface.BUTTON_NEGATIVE)
+                getLocationFailed()}
+                    .show()
     }
 
     @SuppressLint("MissingPermission")
-    private fun getLocation() {
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        fusedLocationClient.lastLocation.addOnSuccessListener { location : Location? ->
-            // Got last known location. In some rare situations this can be null.
-            Toast.makeText(this, location?.latitude.toString(), Toast.LENGTH_SHORT).show()
-        }.addOnFailureListener {
-            Toast.makeText(this, it.message, Toast.LENGTH_SHORT).show()
-        }
+    private fun getLocation(){
+        toast("Getting Location")
+        LocationServices.getFusedLocationProviderClient(this)
+            .lastLocation
+            .addOnSuccessListener{ location: Location? ->
+              //  toast("Location Found ${location?.latitude}, ${location?.longitude}")
+                setTitle(" Finding Pets Near ${location?.latitude}, ${location?.longitude}")
+                if(location !=null){
+                    onLocationFound(location.latitude, location. longitude)
+
+                }
+                else{
+                    toast("Location was null")
+                }
+            }
+            .addOnFailureListener{error ->
+                toast(error.message ?: "Get location failed")
+            }
+//        val client = LocationServices
+//            .getFusedLocationProviderClient(this)
+//        val locationCallback:LocationCallback = object : LocationCallback(){
+//            override fun onLocationResult(locationResult: LocationResult) {
+//                super.onLocationResult(locationResult)
+
+//                val location = locationResult?.lastLocation
+//                toast("Location Found ${location?.latitude}, ${location?.longitude}")
+//               setTitle("${location?.latitude}, ${location?.longitude}")
+//            }
+//                }
+//                client
+//            .requestLocationUpdates(LocationRequest.create(), locationCallback, null)
+//        lifecycle.addObserver(object: DefaultLifecycleObserver {
+//            override fun onResume(owner: LifecycleOwner){
+//                super.onResume(owner)
+//                client.requestLocationUpdates(LocationRequest(), locationCallback, null)
+//            }
+//
+//            override fun onPause(owner: LifecycleOwner) {
+//                super.onPause(owner)
+//                client.removeLocationUpdates(locationCallback)
+//            }
+//        })
+   }
+
+    private fun getLocationFailed(){
+        if(!ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION))
+            toast("Getting Location Failed, go to settings to enable this")
+            else
+            toast("Getting Location Failed")
+    }
+
+    private fun toast(toastMessage: String){
+        Toast.makeText(this, toastMessage, Toast.LENGTH_LONG).show()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        when (requestCode) {
-            7 -> {
-                // If request is cancelled, the result arrays are empty.
-                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    // permission was granted, yay! Do the
-                    // contacts-related task you need to do.
-                    getLocation()
-                } else {
-                    // permission denied, boo! Disable the
-                    // functionality that depends on this permission.
-                }
-                return
+        if(requestCode == LOCATION_REQUEST_CODE){
+            if(grantResults.isNotEmpty()&& grantResults[0]== PackageManager.PERMISSION_GRANTED) {
+                getLocation()
             }
-            else -> {
-                // Ignore all other requests.
+            else{
+                getLocationFailed()
             }
         }
+
     }
-
-    private class PetsAdapter : PagedListAdapter<PetModel, PetCardViewHolder>(noteDiffer) {
-
-        var itemClickListener: ((PetModel) -> Unit)? = null
-
+    private fun onLocationFound(lat: Double, lng: Double){
+//        DataSource.findAnimals(lat, lng ){result  ->
+//            toast("Found ${result.data?.animals?.size} Animals in your area")
+//        }
+        LivePagedListBuilder<Int, PetModel>(PetsDataSourceFactory(lat, lng), 10 )
+            .build()
+            .observe(this, Observer{
+                adapter.submitList(it)
+            })
+    }
+    private class PetsAdapter : PagedListAdapter<PetModel, PetCardViewHolder>(diffCallback){
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PetCardViewHolder {
-            return PetCardViewHolder.inflate(parent).apply {
-                this.itemView.setOnClickListener {
-                    val item = getItem(this.adapterPosition)
-                    if(item != null)
-                        itemClickListener?.invoke(item)
-                }
-            }
+
+            return PetCardViewHolder.inflate(parent)
+
         }
 
         override fun onBindViewHolder(holder: PetCardViewHolder, position: Int) {
+
             holder.bind(getItem(position))
         }
+        companion object{
+            val diffCallback = object: DiffUtil.ItemCallback<PetModel>(){
+                override fun areItemsTheSame(oldItem: PetModel, newItem: PetModel): Boolean
 
-        companion object {
-            private val noteDiffer = object : DiffUtil.ItemCallback<PetModel>() {
+                 = oldItem.id==newItem.id
 
-                override fun areItemsTheSame(oldItem: PetModel, newItem: PetModel): Boolean =
-                    oldItem.id == newItem.id
+                override fun areContentsTheSame(oldItem: PetModel, newItem: PetModel): Boolean
 
-                override fun areContentsTheSame(oldItem: PetModel, newItem: PetModel): Boolean =
-                    oldItem == newItem
-
+                 = oldItem==newItem
             }
         }
     }
-
     private class PetCardViewHolder private constructor(view: View) : RecyclerView.ViewHolder(view) {
 
         val image: ImageView = itemView.findViewById(R.id.vnc_image)
@@ -154,11 +208,11 @@ class PetsActivity : AppCompatActivity() {
             )
         }
 
-        fun bind(note: PetModel?) {
-            image.isVisible = note?.imageUrl != null
-            image.loadImageUrl(note?.imageUrl)
-            titleView.text = note?.name
-            textView.text = note?.breed
+        fun bind(model: PetModel?) {
+            image.isVisible = model?.imageUrl != null
+            image.loadImageUrl(model?.imageUrl)
+            titleView.text = model?.name
+            textView.text = "${model?.breed}\n ${model?.location}"
         }
 
     }
